@@ -161,6 +161,12 @@ jobs:
             echo "HAVE_SOURCE_BOOT_IMAGE=true" >> $GITHUB_ENV
         fi
 
+    - name: Lower G75 min OPPs (LL 450 / Big 500)
+      if: env.LOWER_MIN_OPPS == 'true'
+      run: |
+        chmod +x $GITHUB_WORKSPACE/patches/apply_lower_min_opps.sh
+        $GITHUB_WORKSPACE/patches/apply_lower_min_opps.sh $GITHUB_WORKSPACE/kernel_workspace/android-kernel
+
     - name: Setup KernelSU
       if: env.ENABLE_KERNELSU == 'true'
       run: |
