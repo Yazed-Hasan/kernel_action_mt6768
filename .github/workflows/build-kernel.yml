@@ -171,7 +171,8 @@ jobs:
       if: env.ENABLE_KERNELSU == 'true'
       run: |
         cd $GITHUB_WORKSPACE/kernel_workspace/android-kernel
-        curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s ${{ env.KERNELSU_TAG }}
+        # Pin setup.sh to the same tag — main's setup can mismatch older tags
+        curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/${{ env.KERNELSU_TAG }}/kernel/setup.sh" | bash -s ${{ env.KERNELSU_TAG }}
         if [ -d KernelSU ]; then
             KSU_VERSION="_$(cd KernelSU && expr $(/usr/bin/git rev-list --count HEAD) + 10200)"
         else
@@ -188,12 +189,13 @@ jobs:
         if [ ${{ env.ENABLE_KERNELSU }} = true ]; then
             if [ ${{ env.KSU_HOOKS_PATCH }} = true ]; then
                 git apply $GITHUB_WORKSPACE/patches/KSU_HOOKS_PATCH.patch
-                if grep -q "CONFIG_KSU" arch/${{ env.KERNEL_ARCH }}/configs/${{ env.KERNEL_CONFIG }}; then
-                    sed -i 's/# CONFIG_KSU is not set/CONFIG_KSU=y/g' arch/${{ env.KERNEL_ARCH }}/configs/${{ env.KERNEL_CONFIG }}
-                    sed -i 's/CONFIG_KSU=n/CONFIG_KSU=y/g' arch/${{ env.KERNEL_ARCH }}/configs/${{ env.KERNEL_CONFIG }}
-                else
-                    echo "CONFIG_KSU=y" >> arch/${{ env.KERNEL_ARCH }}/configs/${{ env.KERNEL_CONFIG }}
-                fi
+            fi
+            # Always enable CONFIG_KSU when KernelSU is requested
+            if grep -q "CONFIG_KSU" arch/${{ env.KERNEL_ARCH }}/configs/${{ env.KERNEL_CONFIG }}; then
+                sed -i 's/# CONFIG_KSU is not set/CONFIG_KSU=y/g' arch/${{ env.KERNEL_ARCH }}/configs/${{ env.KERNEL_CONFIG }}
+                sed -i 's/CONFIG_KSU=n/CONFIG_KSU=y/g' arch/${{ env.KERNEL_ARCH }}/configs/${{ env.KERNEL_CONFIG }}
+            else
+                echo "CONFIG_KSU=y" >> arch/${{ env.KERNEL_ARCH }}/configs/${{ env.KERNEL_CONFIG }}
             fi
             if [ ${{ env.ADD_KPROBES_CONFIG }} = true -a ${{ env.KSU_HOOKS_PATCH }} != true ]; then
                 echo "CONFIG_MODULES=y" >> arch/${{ env.KERNEL_ARCH }}/configs/${{ env.KERNEL_CONFIG }}
