@@ -305,14 +305,19 @@ jobs:
                     }
                 fi
         fi
+        # mt6768-r/shockwave-wip ships full LTO (# CONFIG_THINLTO is not set), which
+        # breaks the final link with undefined __tracepoint_irq_entry/_exit/_tracing_on.
+        # mt6768-s works because ThinLTO stays on (Kconfig default). Force ThinLTO here.
+        if grep -q '^# CONFIG_THINLTO is not set' arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig; then
+            echo "Enabling ThinLTO (R-tree full LTO breaks IRQ tracepoint symbols)"
+            sed -i 's/^# CONFIG_THINLTO is not set/CONFIG_THINLTO=y/' arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
+        fi
         if [ "${{ env.DISABLE_LTO }}" = "true" ]; then
-            # Clang LTO can drop IRQ/ftrace symbols on 4.14 (e.g. __tracepoint_irq_entry)
-            echo "Disabling Clang LTO to avoid undefined __tracepoint_* link errors"
-            sed -i 's/^CONFIG_LTO=y/# CONFIG_LTO is not set/' arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
-            sed -i 's/^CONFIG_LTO_CLANG=y/# CONFIG_LTO_CLANG is not set/' arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
-            sed -i 's/^CONFIG_THINLTO=y/# CONFIG_THINLTO is not set/' arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
-            grep -q '^CONFIG_LTO_NONE=y' arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig || \
-              echo "CONFIG_LTO_NONE=y" >> arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
+            echo "Disabling Clang LTO"
+            sed -i 's/CONFIG_LTO=y/CONFIG_LTO=n/' arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
+            sed -i 's/CONFIG_LTO_CLANG=y/CONFIG_LTO_CLANG=n/' arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
+            sed -i 's/CONFIG_THINLTO=y/CONFIG_THINLTO=n/' arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
+            echo "CONFIG_LTO_NONE=y" >> arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
         fi
         if [ ${{ env.DISABLE_CC_WERROR }} = true ]; then
             echo "CONFIG_CC_WERROR=n" >> arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
