@@ -305,11 +305,16 @@ jobs:
                     }
                 fi
         fi
-        # mt6768-r/shockwave-wip ships full LTO (# CONFIG_THINLTO is not set), which
-        # breaks the final link with undefined __tracepoint_irq_entry/_exit/_tracing_on.
-        # mt6768-s works because ThinLTO stays on (Kconfig default). Force ThinLTO here.
+        # R-tree enables MTK_SCHED_TRACERS which injects trace_irq_entry/exit + tracing_on
+        # from mtk_events.h into irqdesc.c. With Clang LTO those __tracepoint_* symbols
+        # go missing at final link. S-tree has this off and links cleanly — match that.
+        if grep -q '^CONFIG_MTK_SCHED_TRACERS=y' arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig; then
+            echo "Disabling CONFIG_MTK_SCHED_TRACERS (fixes undefined __tracepoint_irq_* / tracing_on)"
+            sed -i 's/^CONFIG_MTK_SCHED_TRACERS=y/# CONFIG_MTK_SCHED_TRACERS is not set/' arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
+        fi
+        # R-tree also forces full LTO; prefer ThinLTO like S-tree defaults.
         if grep -q '^# CONFIG_THINLTO is not set' arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig; then
-            echo "Enabling ThinLTO (R-tree full LTO breaks IRQ tracepoint symbols)"
+            echo "Enabling ThinLTO"
             sed -i 's/^# CONFIG_THINLTO is not set/CONFIG_THINLTO=y/' arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
         fi
         if [ "${{ env.DISABLE_LTO }}" = "true" ]; then
@@ -347,15 +352,16 @@ jobs:
 
     - name: Build kernel
       run: |
+        set -o pipefail
         cd $GITHUB_WORKSPACE/kernel_workspace/android-kernel
-        if [ ${{ env.USE_GCC }} = true ]; then
-            if [ ${{ env.USE_GCC_64 }} = true ]; then
+        if [ "${{ env.USE_GCC }}" = "true" ]; then
+            if [ "${{ env.USE_GCC_64 }}" = "true" ]; then
                 export PATH=$GITHUB_WORKSPACE/kernel_workspace/gcc-64/bin:$PATH
             fi
-            if [ ${{ env.USE_GCC_32 }} = true ]; then
+            if [ "${{ env.USE_GCC_32 }}" = "true" ]; then
                 export PATH=$GITHUB_WORKSPACE/kernel_workspace/gcc-32/bin:$PATH
             fi
-        elif [ ${{ env.USE_CLANG }} = true ]; then
+        elif [ "${{ env.USE_CLANG }}" = "true" ]; then
             export PATH=$GITHUB_WORKSPACE/kernel_workspace/clang/bin:$PATH
         else
             echo "Toolchain not selected"
@@ -363,24 +369,32 @@ jobs:
         fi
         export KBUILD_BUILD_HOST=Github-Action
         export KBUILD_BUILD_USER=$(echo ${{ github.actor }} | tr A-Z a-z)
-        if [ -n ${{ env.KSU_EXPECTED_SIZE }} ] && [ -n ${{ env.KSU_EXPECTED_HASH }} ]; then
+        if [ -n "${{ env.KSU_EXPECTED_SIZE }}" ] && [ -n "${{ env.KSU_EXPECTED_HASH }}" ]; then
           export KSU_EXPECTED_SIZE=${{ env.KSU_EXPECTED_SIZE }}
           export KSU_EXPECTED_HASH=${{ env.KSU_EXPECTED_HASH }}
         fi
         make -j$(nproc --all) CC=clang O=out ARCH=${{ env.KERNEL_ARCH }} ${{ env.EXTRA_CMDS }} ${DEVICE}_defconfig
-        if [ ${{ env.ENABLE_CCACHE }} = true ]; then
-            if [ ${{ env.USE_GCC }} = true ]; then
-                make -j$(nproc --all) CC="ccache gcc" O=out ARCH=${{ env.KERNEL_ARCH }} ${{ env.EXTRA_CMDS }}
-            else
-                make -j$(nproc --all) CC="ccache clang" O=out ARCH=${{ env.KERNEL_ARCH }} ${{ env.EXTRA_CMDS }}
-            fi
+        # ccache-action already wraps compilers on PATH; never pass CC="ccache clang"
+        # (space breaks kbuild and fails within seconds).
+        if [ "${{ env.USE_GCC }}" = "true" ]; then
+            make -j$(nproc --all) CC=gcc O=out ARCH=${{ env.KERNEL_ARCH }} ${{ env.EXTRA_CMDS }} 2>&1 | tee "$GITHUB_WORKSPACE/kernel_workspace/build.log"
         else
-            if [ ${{ env.USE_GCC }} = true ]; then
-                make -j$(nproc --all) CC=gcc O=out ARCH=${{ env.KERNEL_ARCH }} ${{ env.EXTRA_CMDS }}
-            else
-                make -j$(nproc --all) CC=clang O=out ARCH=${{ env.KERNEL_ARCH }} ${{ env.EXTRA_CMDS }}
-            fi
+            make -j$(nproc --all) CC=clang O=out ARCH=${{ env.KERNEL_ARCH }} ${{ env.EXTRA_CMDS }} 2>&1 | tee "$GITHUB_WORKSPACE/kernel_workspace/build.log"
         fi
+        status=$?
+        if [ $status -ne 0 ]; then
+            echo "===== last 80 lines of build.log ====="
+            tail -n 80 "$GITHUB_WORKSPACE/kernel_workspace/build.log" || true
+            exit $status
+        fi
+
+    - name: Upload build log on failure
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-log-${{ matrix.target }}-${{ env.DEVICE }}-${{ env.BUILD_TIME }}
+        path: kernel_workspace/build.log
+        if-no-files-found: ignore
 
     - name: Check a kernel output files
       run: |
