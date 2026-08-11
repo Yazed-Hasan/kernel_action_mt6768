@@ -305,11 +305,14 @@ jobs:
                     }
                 fi
         fi
-        if [ ${{ env.DISABLE_LTO }} = true ]; then
-            sed -i 's/CONFIG_LTO=y/CONFIG_LTO=n/' arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
-            sed -i 's/CONFIG_LTO_CLANG=y/CONFIG_LTO_CLANG=n/' arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
-            sed -i 's/CONFIG_THINLTO=y/CONFIG_THINLTO=n/' arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
-            echo "CONFIG_LTO_NONE=y" >> arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
+        if [ "${{ env.DISABLE_LTO }}" = "true" ]; then
+            # Clang LTO can drop IRQ/ftrace symbols on 4.14 (e.g. __tracepoint_irq_entry)
+            echo "Disabling Clang LTO to avoid undefined __tracepoint_* link errors"
+            sed -i 's/^CONFIG_LTO=y/# CONFIG_LTO is not set/' arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
+            sed -i 's/^CONFIG_LTO_CLANG=y/# CONFIG_LTO_CLANG is not set/' arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
+            sed -i 's/^CONFIG_THINLTO=y/# CONFIG_THINLTO is not set/' arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
+            grep -q '^CONFIG_LTO_NONE=y' arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig || \
+              echo "CONFIG_LTO_NONE=y" >> arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
         fi
         if [ ${{ env.DISABLE_CC_WERROR }} = true ]; then
             echo "CONFIG_CC_WERROR=n" >> arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
