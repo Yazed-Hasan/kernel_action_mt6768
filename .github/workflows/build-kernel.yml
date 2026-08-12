@@ -240,6 +240,12 @@ jobs:
         chmod +x $GITHUB_WORKSPACE/patches/apply_lower_min_opps.sh
         $GITHUB_WORKSPACE/patches/apply_lower_min_opps.sh $GITHUB_WORKSPACE/kernel_workspace/android-kernel
 
+    - name: DeepFix MT662x WMT wakelock (idle)
+      if: env.FIX_MTK_WAKELOCK == 'true'
+      run: |
+        chmod +x $GITHUB_WORKSPACE/patches/apply_mtk_wakelock_idle.sh
+        $GITHUB_WORKSPACE/patches/apply_mtk_wakelock_idle.sh $GITHUB_WORKSPACE/kernel_workspace/android-kernel
+
     - name: Setup KernelSU
       if: env.ENABLE_KERNELSU == 'true'
       run: |
